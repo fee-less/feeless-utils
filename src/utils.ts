@@ -58,7 +58,7 @@ function fPointsToFLSS(fPoints: number) {
 
 function calculateReward(blockHeight: number): number {
   const k = -STARTING_REWARD / MAX_SUPPLY;
-  return STARTING_REWARD * Math.pow(Math.E, k * blockHeight);
+  return Math.round(STARTING_REWARD * Math.pow(Math.E, k * blockHeight));
 }
 
 function getDiff(blocks: Block[]) {
