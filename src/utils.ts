@@ -96,7 +96,7 @@ function calculateMintFee(height: number, mints: number): number {
   return Math.round(Math.max(1, BASE_MINT_FEE * (mints / height)));
 }
 
-async function hashArgon(msg: string) {
+async function hashArgon(msg: string, cpus: number | undefined = undefined) {
   if (typeof window !== "undefined") {
     // We're in browser: do NOT import argon2
     throw new Error("argon2 hashing only supported in Node.js");
@@ -106,7 +106,8 @@ async function hashArgon(msg: string) {
   const salt = Buffer.from('feeless-argon2-salt');
   const hashBuffer = await argon2.hash(msg, {
     raw: true,
-    salt
+    salt,
+    parallelism: cpus
   });
 
   const hexString = hashBuffer.toString('hex');
