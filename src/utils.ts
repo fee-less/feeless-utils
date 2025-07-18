@@ -58,7 +58,7 @@ function fPointsToFLSS(fPoints: number) {
 
 function calculateReward(blockHeight: number): number {
   const k = -STARTING_REWARD / MAX_SUPPLY;
-  return Math.round(STARTING_REWARD * Math.pow(Math.E, k * blockHeight));
+  return STARTING_REWARD * Math.pow(Math.E, k * blockHeight);
 }
 
 function getDiff(blocks: Block[]) {
@@ -82,7 +82,7 @@ function getPublicKey(priv: string) {
 // Calculate dynamic minting fee based on recent minting activity
 function calculateMintFee(height: number, mints: number): number {
   if (mints === 0 || height === 0) return BASE_MINT_FEE;
-  return Math.max(1, BASE_MINT_FEE * (mints / height));
+  return Math.round(Math.max(1, BASE_MINT_FEE * (mints / height)));
 }
 
 async function hashArgon(msg: string) {
