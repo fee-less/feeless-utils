@@ -41,11 +41,10 @@ type EventPayload = {
 const MAX_SUPPLY = 100000000;
 const STARTING_REWARD = 100;
 const BLOCK_TIME = 30000;
-const ADJUST_PERCENT = 0.01;
 const POINTS = 5;
 const DEV_FEE = 0.09;
 const DEV_WALLET = "03bea510ff0689107a3a7b3ff3968e0554672142bbf6fc6db75d01e7aa6620e4f8";
-const STARTING_DIFF = BigInt("0x00FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+const STARTING_DIFF = BigInt("0x0FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
 const BASE_MINT_FEE = FLSStoFPoints(1000); // Minimum minting fee in fPoints
 
 function FLSStoFPoints(flss: number) {
@@ -61,13 +60,25 @@ function calculateReward(blockHeight: number): number {
   return STARTING_REWARD * Math.pow(Math.E, k * blockHeight);
 }
 
-function getDiff(blocks: Block[]) {
+function getDiff(blocks: Block[]): bigint {
   let DIFF = STARTING_DIFF;
+  if (blocks.length < 2) return STARTING_DIFF;
+
   for (let i = 1; i < blocks.length; i++) {
-    DIFF = BigInt(DIFF * BigInt(Math.round((blocks[i].timestamp - blocks[i - 1].timestamp > BLOCK_TIME ? 1 + ADJUST_PERCENT : 1 - ADJUST_PERCENT) * 100)) / 100n);
+    const delta = blocks[i].timestamp - blocks[i - 1].timestamp;
+    const ratio = delta / BLOCK_TIME; // >1 if slow, <1 if fast
+
+    const multiplier = Math.round(ratio * 100); // e.g., 1.02 => 102
+    DIFF = (DIFF * BigInt(multiplier)) / 100n;
+
+    // Clamp DIFF between 0 and STARTING_DIFF
+    if (DIFF > STARTING_DIFF) DIFF = STARTING_DIFF;
+    if (DIFF < 0n) DIFF = 0n;
   }
+
   return DIFF;
 }
+
 
 function randomKeyPair() {
   const kp = ec.genKeyPair();
@@ -103,4 +114,4 @@ async function hashArgon(msg: string) {
 }
 
 export type { Transaction, Block, EventPayload, TokenMint, MintedTokens, MintedTokenEntry };
-export { MAX_SUPPLY, STARTING_REWARD, BLOCK_TIME, ADJUST_PERCENT, POINTS, DEV_FEE, BASE_MINT_FEE, calculateMintFee, DEV_WALLET, STARTING_DIFF, FLSStoFPoints, fPointsToFLSS, calculateReward, getDiff, randomKeyPair, getPublicKey, hashArgon, FeelessClient };
+export { MAX_SUPPLY, STARTING_REWARD, BLOCK_TIME, POINTS, DEV_FEE, BASE_MINT_FEE, calculateMintFee, DEV_WALLET, STARTING_DIFF, FLSStoFPoints, fPointsToFLSS, calculateReward, getDiff, randomKeyPair, getPublicKey, hashArgon, FeelessClient };
