@@ -2,7 +2,6 @@ import pkg from "elliptic";
 const { ec: EC } = pkg;
 const ec = new EC("secp256k1");
 import FeelessClient from "./client.js";
-import { createHash } from "crypto";
 
 type TokenMint = {
   miningReward?: number;
@@ -97,23 +96,20 @@ function calculateMintFee(height: number, mints: number): number {
   return Math.round(Math.max(1, BASE_MINT_FEE * (mints / height)));
 }
 
-async function hashArgon(msg: string, cpus: number | undefined = undefined) {
+async function hashArgon(msg: string) {
   if (typeof window !== "undefined") {
+    // We're in browser: do NOT import argon2
     throw new Error("argon2 hashing only supported in Node.js");
   }
   const argon2 = await import("argon2");
 
-  const salt = Buffer.from("feeless-argon2-salt");
-  const rawHashBuffer = await argon2.hash(msg, {
+  const salt = Buffer.from('feeless-argon2-salt');
+  const hashBuffer = await argon2.hash(msg, {
     raw: true,
-    salt,
-    parallelism: cpus ?? 1,
+    salt
   });
 
-  // Hash the raw Argon2 output for stable output regardless of parallelism
-  const stableHashBuffer = createHash("sha256").update(rawHashBuffer).digest();
-
-  const hexString = stableHashBuffer.toString("hex");
+  const hexString = hashBuffer.toString('hex');
   return BigInt("0x" + hexString);
 }
 
