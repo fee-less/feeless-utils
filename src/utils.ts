@@ -99,19 +99,21 @@ function calculateMintFee(height: number, mints: number): number {
 
 async function hashArgon(msg: string, cpus: number | undefined = undefined) {
   if (typeof window !== "undefined") {
-    // We're in browser: do NOT import argon2
     throw new Error("argon2 hashing only supported in Node.js");
   }
   const argon2 = await import("argon2");
 
-  const salt = Buffer.from('feeless-argon2-salt');
-  const hashBuffer = await argon2.hash(msg, {
-    raw: false,
+  const salt = Buffer.from("feeless-argon2-salt");
+  const rawHashBuffer = await argon2.hash(msg, {
+    raw: true,
     salt,
-    parallelism: cpus ?? 1
+    parallelism: cpus ?? 1,
   });
 
-  const hexString = createHash("sha256").update(hashBuffer).digest();
+  // Hash the raw Argon2 output for stable output regardless of parallelism
+  const stableHashBuffer = createHash("sha256").update(rawHashBuffer).digest();
+
+  const hexString = stableHashBuffer.toString("hex");
   return BigInt("0x" + hexString);
 }
 
