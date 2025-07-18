@@ -2,6 +2,7 @@ import pkg from "elliptic";
 const { ec: EC } = pkg;
 const ec = new EC("secp256k1");
 import FeelessClient from "./client.js";
+import { createHash } from "crypto";
 
 type TokenMint = {
   miningReward?: number;
@@ -105,12 +106,12 @@ async function hashArgon(msg: string, cpus: number | undefined = undefined) {
 
   const salt = Buffer.from('feeless-argon2-salt');
   const hashBuffer = await argon2.hash(msg, {
-    raw: true,
+    raw: false,
     salt,
     parallelism: cpus ?? 1
   });
 
-  const hexString = hashBuffer.toString('hex');
+  const hexString = createHash("sha256").update(hashBuffer).digest();
   return BigInt("0x" + hexString);
 }
 
