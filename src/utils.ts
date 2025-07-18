@@ -107,7 +107,7 @@ async function hashArgon(msg: string, cpus: number | undefined = undefined) {
   const hashBuffer = await argon2.hash(msg, {
     raw: true,
     salt,
-    parallelism: cpus
+    parallelism: cpus ?? 1
   });
 
   const hexString = hashBuffer.toString('hex');
