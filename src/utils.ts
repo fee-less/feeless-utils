@@ -68,7 +68,8 @@ function getDiff(blocks: Block[]): bigint {
     const delta = blocks[i].timestamp - blocks[i - 1].timestamp;
     const ratio = delta / BLOCK_TIME; // >1 if slow, <1 if fast
 
-    const multiplier = Math.round(ratio * 100); // e.g., 1.02 => 102
+    let multiplier = Math.round(ratio * 100); // e.g., 1.02 => 102
+    multiplier = Math.max(50, Math.min(multiplier, 150));
     DIFF = (DIFF * BigInt(multiplier)) / 100n;
 
     // Clamp DIFF between 0 and STARTING_DIFF
