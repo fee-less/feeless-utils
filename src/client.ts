@@ -153,6 +153,27 @@ export class FeelessClient {
     return this.waitForMessage(JSON.stringify(pl));
   }
 
+  async placeTXV2(receiver: string, amountFPoints: number, token = ""): Promise<null | string> { // V2 Returns Signature that can be used to search TX later.
+    if (!this.ready) throw new Error("FeeleesClient.init() must be called before accessing any WS events");
+    const tx: Transaction = {
+      sender: this.pub,
+      receiver: receiver,
+      amount: amountFPoints,
+      signature: "",
+      nonce: Math.round(Math.random() * 1e6),
+      timestamp: Date.now()
+    };
+    if (token) tx.token = token;
+    tx.signature = this.keys.sign(SHA256(JSON.stringify(tx)).toString()).toDER("hex");
+    const pl: EventPayload = {
+      event: "tx",
+      data: tx
+    };
+    this.ws.send(JSON.stringify(pl));
+    if (!this.waitForMessage(JSON.stringify(pl))) return null;
+    return tx.signature;
+  }
+
   async submitBlock(block: Block): Promise<boolean> {
     const pl: EventPayload = {
       event: "block",
