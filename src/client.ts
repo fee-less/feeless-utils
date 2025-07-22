@@ -39,8 +39,9 @@ export class FeelessClient {
   private http: string;
   private seenMsgs: string[] = [];
   public ready: boolean = false;
-  public onblock: (block: Block) => void = () => { };
-  public onutx: (tx: Transaction) => void = () => { };
+  public onblock: (block: Block) => void = () => {};
+  public onutx: (tx: Transaction) => void = () => {};
+  public timeout = 2000;
 
   constructor(node: string, nodeHttp: string, privateKey: string) {
     this.http = nodeHttp;
@@ -51,11 +52,12 @@ export class FeelessClient {
   }
 
   init() {
-    return new Promise<boolean>(resolve => {
+    return new Promise<boolean>((resolve) => {
       this.ws.onopen = () => {
         this.ready = true;
         this.ws.addEventListener("message", (event: any) => {
-          if (this.seenMsgs.includes(SHA256(event.data.toString()).toString())) return;
+          if (this.seenMsgs.includes(SHA256(event.data.toString()).toString()))
+            return;
           this.seenMsgs.push(SHA256(event.data.toString()).toString());
           const pl: EventPayload = JSON.parse(event.data.toString());
           if (pl.event === "block") this.onblock(pl.data as Block);
@@ -71,14 +73,14 @@ export class FeelessClient {
                 signature: "mint",
                 nonce: Math.round(Math.random() * 1e6),
                 timestamp: Date.now(),
-                token: tx.mint.token
+                token: tx.mint.token,
               };
               this.onutx(airdropTx);
             }
           }
         });
         resolve(true);
-      }
+      };
       this.ws.onerror = () => resolve(false);
     });
   }
@@ -87,87 +89,139 @@ export class FeelessClient {
     this.ws.close();
   }
 
-  getPublic() { return this.pub }
-  
-  getPrivate() { return this.priv }
+  getPublic() {
+    return this.pub;
+  }
 
-  signMessage(msg: string) { return this.keys.sign(SHA256(msg).toString()).toDER("hex") }
+  getPrivate() {
+    return this.priv;
+  }
 
-  async pollBalance(token: string = "", includeMempool = false): Promise<number> {
-    return await fetch(`${this.http}/${includeMempool ? 'balance-mempool' : 'balance'}/${this.pub}${token ? "." + encodeURIComponent(token) : ""}`).then(res => res.text()).then(bal => parseInt(bal));
+  signMessage(msg: string) {
+    return this.keys.sign(SHA256(msg).toString()).toDER("hex");
+  }
+
+  async pollBalance(
+    token: string = "",
+    includeMempool = false
+  ): Promise<number> {
+    return await fetch(
+      `${this.http}/${includeMempool ? "balance-mempool" : "balance"}/${
+        this.pub
+      }${token ? "." + encodeURIComponent(token) : ""}`
+    )
+      .then((res) => res.text())
+      .then((bal) => parseInt(bal));
   }
 
   async getBlockHeight(): Promise<number> {
-    return await fetch(`${this.http}/height`).then(res => res.json()).then(height => parseInt(height.height));
+    return await fetch(`${this.http}/height`)
+      .then((res) => res.json())
+      .then((height) => parseInt(height.height));
   }
 
   async getDiff(): Promise<bigint> {
-    return await fetch(`${this.http}/diff`).then(res => res.json()).then(diff => BigInt("0x" + diff.diff));
+    return await fetch(`${this.http}/diff`)
+      .then((res) => res.json())
+      .then((diff) => BigInt("0x" + diff.diff));
   }
 
   async getBlock(height: number): Promise<Block> {
-    return await fetch(`${this.http}/block/${height}`).then(res => res.json()).then(b => b);
+    return await fetch(`${this.http}/block/${height}`)
+      .then((res) => res.json())
+      .then((b) => b);
   }
 
   async getMempool(): Promise<Transaction[]> {
-    return await fetch(`${this.http}/mempool`).then(res => res.json()).then(mempool => mempool);
+    return await fetch(`${this.http}/mempool`)
+      .then((res) => res.json())
+      .then((mempool) => mempool);
   }
 
   async getTokens(): Promise<string[]> {
-    return await fetch(`${this.http}/tokens/${this.pub}`).then(res => res.json()).then(tokens => tokens);
+    return await fetch(`${this.http}/tokens/${this.pub}`)
+      .then((res) => res.json())
+      .then((tokens) => tokens);
   }
 
   async getTokenInfo(token: string): Promise<MintedTokenEntry> {
-    return await fetch(`${this.http}/token-info/${token}`).then(res => res.json()).then(token => token);
+    return await fetch(`${this.http}/token-info/${token}`)
+      .then((res) => res.json())
+      .then((token) => token);
   }
 
   async getTokenInfoByI(i: number): Promise<MintedTokenEntry> {
-    return await fetch(`${this.http}/token/${i}`).then(res => res.json()).then(token => token);
+    return await fetch(`${this.http}/token/${i}`)
+      .then((res) => res.json())
+      .then((token) => token);
   }
 
   async getTokenCount(): Promise<MintedTokenEntry> {
-    return await fetch(`${this.http}/token-count`).then(res => res.json()).then(r => r.count);
+    return await fetch(`${this.http}/token-count`)
+      .then((res) => res.json())
+      .then((r) => r.count);
   }
 
   async getMintFee(): Promise<number> {
-    return await fetch(`${this.http}/mint-fee`).then(res => res.json()).then(fee => parseInt(fee.fee));
+    return await fetch(`${this.http}/mint-fee`)
+      .then((res) => res.json())
+      .then((fee) => parseInt(fee.fee));
   }
 
-  async placeTX(receiver: string, amountFPoints: number, token = ""): Promise<boolean> {
-    if (!this.ready) throw new Error("FeeleesClient.init() must be called before accessing any WS events");
+  async placeTX(
+    receiver: string,
+    amountFPoints: number,
+    token = ""
+  ): Promise<boolean> {
+    if (!this.ready)
+      throw new Error(
+        "FeeleesClient.init() must be called before accessing any WS events"
+      );
     const tx: Transaction = {
       sender: this.pub,
       receiver: receiver,
       amount: amountFPoints,
       signature: "",
       nonce: Math.round(Math.random() * 1e6),
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
     if (token) tx.token = token;
-    tx.signature = this.keys.sign(SHA256(JSON.stringify(tx)).toString()).toDER("hex");
+    tx.signature = this.keys
+      .sign(SHA256(JSON.stringify(tx)).toString())
+      .toDER("hex");
     const pl: EventPayload = {
       event: "tx",
-      data: tx
+      data: tx,
     };
     this.ws.send(JSON.stringify(pl));
     return this.waitForMessage(JSON.stringify(pl));
   }
 
-  async placeTXV2(receiver: string, amountFPoints: number, token = ""): Promise<null | string> { // V2 Returns Signature that can be used to search TX later.
-    if (!this.ready) throw new Error("FeeleesClient.init() must be called before accessing any WS events");
+  async placeTXV2(
+    receiver: string,
+    amountFPoints: number,
+    token = ""
+  ): Promise<null | string> {
+    // V2 Returns Signature that can be used to search TX later.
+    if (!this.ready)
+      throw new Error(
+        "FeeleesClient.init() must be called before accessing any WS events"
+      );
     const tx: Transaction = {
       sender: this.pub,
       receiver: receiver,
       amount: amountFPoints,
       signature: "",
       nonce: Math.round(Math.random() * 1e6),
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
     if (token) tx.token = token;
-    tx.signature = this.keys.sign(SHA256(JSON.stringify(tx)).toString()).toDER("hex");
+    tx.signature = this.keys
+      .sign(SHA256(JSON.stringify(tx)).toString())
+      .toDER("hex");
     const pl: EventPayload = {
       event: "tx",
-      data: tx
+      data: tx,
     };
     this.ws.send(JSON.stringify(pl));
     if (!this.waitForMessage(JSON.stringify(pl))) return null;
@@ -177,14 +231,17 @@ export class FeelessClient {
   async submitBlock(block: Block): Promise<boolean> {
     const pl: EventPayload = {
       event: "block",
-      data: block
+      data: block,
     };
     this.ws.send(JSON.stringify(pl));
     return this.waitForMessage(JSON.stringify(pl));
   }
 
   async mintToken(tokenMint: TokenMint): Promise<boolean> {
-    if (!this.ready) throw new Error("FeeleesClient.init() must be called before accessing any WS events");
+    if (!this.ready)
+      throw new Error(
+        "FeeleesClient.init() must be called before accessing any WS events"
+      );
 
     // Then send the token minting transaction
     const mintTx: Transaction = {
@@ -194,18 +251,20 @@ export class FeelessClient {
       signature: "",
       nonce: Math.round(Math.random() * 1e6),
       timestamp: Date.now(),
-      mint: tokenMint
+      mint: tokenMint,
     };
     const mintPl: EventPayload = {
       event: "tx",
-      data: mintTx
+      data: mintTx,
     };
     this.ws.send(JSON.stringify(mintPl));
     return this.waitForMessage(JSON.stringify(mintPl));
   }
 
   async getHistory(): Promise<TransactionHistory[]> {
-    return await fetch(`${this.http}/history/${this.pub}`).then(res => res.json());
+    return await fetch(`${this.http}/history/${this.pub}`).then((res) =>
+      res.json()
+    );
   }
 
   async searchBlockByHash(hash: string): Promise<SearchBlockResult> {
@@ -230,12 +289,19 @@ export class FeelessClient {
   }
 
   // Private
-  private waitForMessage(expectedMessage: string, timeoutMs = 10000): Promise<boolean> {
-    if (!this.ready) throw new Error("FeeleesClient.init() must be called before accessing any WS events");
+  private waitForMessage(
+    expectedMessage: string,
+    timeoutMs = -1
+  ): Promise<boolean> {
+    if (timeoutMs === -1) timeoutMs = this.timeout;
+    if (!this.ready)
+      throw new Error(
+        "FeeleesClient.init() must be called before accessing any WS events"
+      );
     return new Promise((resolve, reject) => {
       try {
         const timer = setTimeout(() => {
-          this.ws.removeEventListener('message', onMessage as any);
+          this.ws.removeEventListener("message", onMessage as any);
           resolve(false);
         }, timeoutMs);
 
@@ -243,13 +309,15 @@ export class FeelessClient {
           const data = event.data.toString();
           if (data === expectedMessage) {
             clearTimeout(timer);
-            this.ws.removeEventListener('message', onMessage as any);
+            this.ws.removeEventListener("message", onMessage as any);
             resolve(true);
           }
         };
 
-        this.ws.addEventListener('message', onMessage as any);
-      } catch (e) { reject(false) };
+        this.ws.addEventListener("message", onMessage as any);
+      } catch (e) {
+        reject(false);
+      }
     });
   }
 }
