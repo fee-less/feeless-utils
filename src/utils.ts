@@ -38,14 +38,14 @@ type EventPayload = {
   data: any;
 };
 
+const POINTS = 5;
 const MAX_SUPPLY = 100000000;
 const STARTING_REWARD = FLSStoFPoints(100);
+const BASE_MINT_FEE = FLSStoFPoints(1000); // Minimum minting fee in fPoints
 const BLOCK_TIME = 30000;
-const POINTS = 5;
 const DEV_FEE = 0.09;
 const DEV_WALLET = "03bea510ff0689107a3a7b3ff3968e0554672142bbf6fc6db75d01e7aa6620e4f8";
 const STARTING_DIFF = BigInt("0x0FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
-const BASE_MINT_FEE = FLSStoFPoints(1000); // Minimum minting fee in fPoints
 
 function FLSStoFPoints(flss: number) {
   return Math.round(flss * Math.pow(10, POINTS));
