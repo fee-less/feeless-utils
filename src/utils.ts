@@ -109,8 +109,8 @@ async function hashArgon(msg: string) {
     raw: true,
     salt,
     timeCost: 1,
-    parallelism: 1,
-    memoryCost: 2 ** 8
+    parallelism: 2,
+    memoryCost: 2 ** 14
   });
 
   const hexString = hashBuffer.toString('hex');
