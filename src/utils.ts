@@ -39,7 +39,7 @@ type EventPayload = {
 };
 
 const MAX_SUPPLY = 100000000;
-const STARTING_REWARD = 100;
+const STARTING_REWARD = FLSStoFPoints(100);
 const BLOCK_TIME = 30000;
 const POINTS = 5;
 const DEV_FEE = 0.09;
@@ -57,7 +57,7 @@ function fPointsToFLSS(fPoints: number) {
 
 function calculateReward(blockHeight: number): number {
   const k = -STARTING_REWARD / MAX_SUPPLY;
-  return STARTING_REWARD * Math.pow(Math.E, k * blockHeight);
+  return Math.round(STARTING_REWARD * Math.pow(Math.E, k * blockHeight));
 }
 
 function getDiff(blocks: Block[]): bigint {
@@ -107,7 +107,10 @@ async function hashArgon(msg: string) {
   const salt = Buffer.from('feeless-argon2-salt');
   const hashBuffer = await argon2.hash(msg, {
     raw: true,
-    salt
+    salt,
+    timeCost: 1,
+    parallelism: 1,
+    memoryCost: 2 ** 8
   });
 
   const hexString = hashBuffer.toString('hex');
