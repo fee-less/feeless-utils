@@ -18,6 +18,7 @@ type Transaction = {
   timestamp: number;
   token?: string;
   mint?: TokenMint;
+  unlock?: number;
 }
 
 type Block = {
