@@ -114,6 +114,16 @@ export class FeelessClient {
       .then((bal) => parseInt(bal));
   }
 
+  async pollLocked(token: string = ""): Promise<number> {
+    return await fetch(
+      `${this.http}/locked/${this.pub}${
+        token ? "." + encodeURIComponent(token) : ""
+      }`
+    )
+      .then((res) => res.text())
+      .then((bal) => parseInt(bal));
+  }
+
   async getBlockHeight(): Promise<number> {
     return await fetch(`${this.http}/height`)
       .then((res) => res.json())
@@ -171,7 +181,8 @@ export class FeelessClient {
   async placeTX(
     receiver: string,
     amountFPoints: number,
-    token = ""
+    token = "",
+    locked?: number
   ): Promise<boolean> {
     if (!this.ready)
       throw new Error(
@@ -184,6 +195,7 @@ export class FeelessClient {
       signature: "",
       nonce: Math.round(Math.random() * 1e6),
       timestamp: Date.now(),
+      unlock: locked || undefined,
     };
     if (token) tx.token = token;
     tx.signature = this.keys
@@ -200,7 +212,8 @@ export class FeelessClient {
   async placeTXV2(
     receiver: string,
     amountFPoints: number,
-    token = ""
+    token = "",
+    locked?: number
   ): Promise<null | string> {
     // V2 Returns Signature that can be used to search TX later.
     if (!this.ready)
@@ -214,6 +227,7 @@ export class FeelessClient {
       signature: "",
       nonce: Math.round(Math.random() * 1e6),
       timestamp: Date.now(),
+      unlock: locked || undefined
     };
     if (token) tx.token = token;
     tx.signature = this.keys
