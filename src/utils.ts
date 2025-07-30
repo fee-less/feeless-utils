@@ -40,7 +40,7 @@ type EventPayload = {
 };
 
 const POINTS = 5;
-const MAX_SUPPLY = 100000000;
+const MAX_SUPPLY = FLSStoFPoints(100000000);
 const STARTING_REWARD = FLSStoFPoints(100);
 const BASE_MINT_FEE = FLSStoFPoints(1000); // Minimum minting fee in fPoints
 const BLOCK_TIME = 30000;
