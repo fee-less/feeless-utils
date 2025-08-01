@@ -267,10 +267,14 @@ export class FeelessClient {
       timestamp: Date.now(),
       mint: tokenMint,
     };
+    mintTx.signature = this.keys
+      .sign(SHA256(JSON.stringify(mintTx)).toString())
+      .toDER("hex");
     const mintPl: EventPayload = {
       event: "tx",
       data: mintTx,
     };
+    
     this.ws.send(JSON.stringify(mintPl));
     return this.waitForMessage(JSON.stringify(mintPl));
   }
