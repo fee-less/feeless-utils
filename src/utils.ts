@@ -63,24 +63,39 @@ function calculateReward(blockHeight: number): number {
 
 function getDiff(blocks: Block[]): bigint {
   let DIFF = STARTING_DIFF;
+
+  // Need at least 2 blocks to calculate an interval
   if (blocks.length < 2) return STARTING_DIFF;
 
-  for (let i = 1; i < blocks.length; i++) {
-    const delta = blocks[i].timestamp - blocks[i - 1].timestamp;
-    const ratio = delta / BLOCK_TIME; // >1 if slow, <1 if fast
+  // Determine how many blocks to consider (up to 100)
+  const numBlocks = Math.min(100, blocks.length - 1);
 
-    let multiplier = Math.round(ratio * 100); // e.g., 1.02 => 102
-    multiplier = Math.max(50, Math.min(multiplier, 150));
-    DIFF = (DIFF * BigInt(multiplier)) / 100n;
+  // Get only the last numBlocks+1 blocks
+  const recentBlocks = blocks.slice(-numBlocks - 1);
 
-    // Clamp DIFF between 0 and STARTING_DIFF
-    if (DIFF > STARTING_DIFF) DIFF = STARTING_DIFF;
-    if (DIFF < 0n) DIFF = 0n;
-  }
+  // Calculate total time between first and last in the range
+  const totalTime =
+    recentBlocks[recentBlocks.length - 1].timestamp - recentBlocks[0].timestamp;
+
+  // Average block time
+  const avgTime = totalTime / numBlocks;
+
+  // Ratio compared to target block time
+  const ratio = avgTime / BLOCK_TIME;
+
+  // Adjust multiplier (clamped between 50% and 150%)
+  let multiplier = Math.round(ratio * 100);
+  multiplier = Math.max(50, Math.min(multiplier, 150));
+
+  // Apply to difficulty
+  DIFF = (DIFF * BigInt(multiplier)) / 100n;
+
+  // Clamp DIFF to valid range
+  if (DIFF > STARTING_DIFF) DIFF = STARTING_DIFF;
+  if (DIFF < 0n) DIFF = 0n;
 
   return DIFF;
 }
-
 
 function randomKeyPair() {
   const kp = ec.genKeyPair();
