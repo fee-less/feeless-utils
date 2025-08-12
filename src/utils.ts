@@ -61,31 +61,47 @@ function calculateReward(blockHeight: number): number {
   return Math.round(STARTING_REWARD * Math.pow(Math.E, k * blockHeight));
 }
 
-function getDiff(blocks: Block[]): bigint {
-  if (blocks.length < 2) return STARTING_DIFF;
+function getDiff(blocks: Block[]) {
+  // If we don't have at least 2 blocks we can't compute intervals -> return starting diff.
+  if (!Array.isArray(blocks) || blocks.length < 2) return STARTING_DIFF;
 
-  const numBlocks = Math.min(100, blocks.length - 1);
-  const recent = blocks.slice(-numBlocks - 1);
+  // Number of intervals to average over (up to 100 most recent intervals)
+  const WINDOW = 100;
+  const n = Math.min(WINDOW, blocks.length - 1);
 
-  // Total time between first and last in the sample
-  const totalTime = recent[recent.length - 1].timestamp - recent[0].timestamp;
-  if (totalTime <= 0) return STARTING_DIFF; // no movement, avoid div/0
+  // Sum the last n deltas between consecutive blocks
+  let sum = 0;
+  for (let i = blocks.length - n; i < blocks.length; i++) {
+    const delta = blocks[i].timestamp - blocks[i - 1].timestamp;
+    // ensure minimum sensible delta (avoid negatives)
+    const safeDelta = Math.max(0, delta);
+    sum += safeDelta;
+  }
 
-  // Average block time
-  const avgTime = totalTime / numBlocks;
+  const avgDelta = Math.round(sum / n); // average milliseconds per block in the window
 
-  // Ratio target/actual — if blocks are slow (< target), ratio > 1 → easier difficulty
-  // if blocks are fast (> target), ratio < 1 → harder difficulty
-  const ratio = BLOCK_TIME / avgTime;
+  // ratio >1 => blocks are slower than target -> make easier (increase DIFF)
+  // ratio <1 => blocks are faster than target -> make harder (decrease DIFF)
+  const ratio = avgDelta / BLOCK_TIME;
 
-  // Calculate new difficulty based on starting difficulty and ratio
-  let newDiff = BigInt(Math.round(Number(STARTING_DIFF) * ratio));
+  // Guard against extreme swings: clamp multiplier between MIN_MULT and MAX_MULT
+  // (these represent 0.5x .. 1.5x by default)
+  const MIN_MULT = 50; // 0.50
+  const MAX_MULT = 150; // 1.50
 
-  // Clamp to bounds
-  if (newDiff > STARTING_DIFF) newDiff = STARTING_DIFF;
-  if (newDiff < 1n) newDiff = 1n;
+  // multiplier as integer percent (e.g., 102 for 1.02)
+  let multiplier = Math.round(ratio * 100);
+  multiplier = Math.max(MIN_MULT, Math.min(multiplier, MAX_MULT));
 
-  return newDiff;
+  // Compute DIFF using BigInt arithmetic
+  // DIFF = STARTING_DIFF * multiplier / 100
+  let DIFF = (STARTING_DIFF * BigInt(multiplier)) / 100n;
+
+  // Sanity clamps: ensure DIFF stays within [0, STARTING_DIFF]
+  if (DIFF > STARTING_DIFF) DIFF = STARTING_DIFF;
+  if (DIFF < 0n) DIFF = 0n;
+
+  return DIFF;
 }
 
 function randomKeyPair() {
