@@ -61,48 +61,36 @@ function calculateReward(blockHeight: number): number {
   return Math.round(STARTING_REWARD * Math.pow(Math.E, k * blockHeight));
 }
 
-function getDiff(blocks: Block[]) {
-  // If we don't have at least 2 blocks we can't compute intervals -> return starting diff.
-  if (!Array.isArray(blocks) || blocks.length < 2) return STARTING_DIFF;
+function getDiff(blocks: Block[]): bigint {
+  let DIFF = STARTING_DIFF;
+  if (blocks.length < 2) return STARTING_DIFF;
 
-  // Number of intervals to average over (up to 100 most recent intervals)
-  const WINDOW = 100;
-  const n = Math.min(WINDOW, blocks.length - 1);
+  for (let i = 1; i < blocks.length; i++) {
+    const recentBlocks = blocks.slice(-100);
 
-  // Sum the last n deltas between consecutive blocks
-  let sum = 0;
-  for (let i = blocks.length - n; i < blocks.length; i++) {
-    const delta = blocks[i].timestamp - blocks[i - 1].timestamp;
-    // ensure minimum sensible delta (avoid negatives)
-    const safeDelta = Math.max(0, delta);
-    sum += safeDelta;
+    // Calculate timestamp differences between consecutive blocks
+    const deltas = [];
+    for (let i = 1; i < recentBlocks.length; i++) {
+      deltas.push(recentBlocks[i].timestamp - recentBlocks[i - 1].timestamp);
+    }
+
+    // Sum the deltas
+    const delta = deltas.reduce((acc, val) => acc + val, 0);
+    
+    const ratio = delta / BLOCK_TIME; // >1 if slow, <1 if fast
+
+    let multiplier = Math.round(ratio * 100); // e.g., 1.02 => 102
+    multiplier = Math.max(50, Math.min(multiplier, 150));
+    DIFF = (DIFF * BigInt(multiplier)) / 100n;
+
+    // Clamp DIFF between 0 and STARTING_DIFF
+    if (DIFF > STARTING_DIFF) DIFF = STARTING_DIFF;
+    if (DIFF < 0n) DIFF = 0n;
   }
-
-  const avgDelta = Math.round(sum / n); // average milliseconds per block in the window
-
-  // ratio >1 => blocks are slower than target -> make easier (increase DIFF)
-  // ratio <1 => blocks are faster than target -> make harder (decrease DIFF)
-  const ratio = avgDelta / BLOCK_TIME;
-
-  // Guard against extreme swings: clamp multiplier between MIN_MULT and MAX_MULT
-  // (these represent 0.5x .. 1.5x by default)
-  const MIN_MULT = 50; // 0.50
-  const MAX_MULT = 150; // 1.50
-
-  // multiplier as integer percent (e.g., 102 for 1.02)
-  let multiplier = Math.round(ratio * 100);
-  multiplier = Math.max(MIN_MULT, Math.min(multiplier, MAX_MULT));
-
-  // Compute DIFF using BigInt arithmetic
-  // DIFF = STARTING_DIFF * multiplier / 100
-  let DIFF = (STARTING_DIFF * BigInt(multiplier)) / 100n;
-
-  // Sanity clamps: ensure DIFF stays within [0, STARTING_DIFF]
-  if (DIFF > STARTING_DIFF) DIFF = STARTING_DIFF;
-  if (DIFF < 0n) DIFF = 0n;
 
   return DIFF;
 }
+
 
 function randomKeyPair() {
   const kp = ec.genKeyPair();
