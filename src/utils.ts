@@ -75,8 +75,8 @@ function getDiff(blocks: Block[]): bigint {
     }
 
     // Sum the deltas
-    const delta = deltas.reduce((acc, val) => acc + val, 0);
-    
+    const delta = deltas.reduce((acc, val) => acc + val, 0) / deltas.length;
+
     const ratio = delta / BLOCK_TIME; // >1 if slow, <1 if fast
 
     let multiplier = Math.round(ratio * 100); // e.g., 1.02 => 102
