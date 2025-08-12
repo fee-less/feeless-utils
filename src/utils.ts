@@ -62,7 +62,7 @@ function calculateReward(blockHeight: number): number {
 }
 
 function getDiff(blocks: Block[]) {
-  const RETARGET_INTERVAL = 100;
+  const RETARGET_INTERVAL = 10;
   const MAX_ADJUST = 4n;
   const targetTimespan = BigInt(RETARGET_INTERVAL) * BigInt(BLOCK_TIME); // ms
 
