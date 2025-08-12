@@ -1,6 +1,6 @@
 {
   "name": "feeless-utils",
-  "version": "7.0.3",
+  "version": "7.0.4",
   "description": "Utils for building aplications with feeless, includes types, calculators etc...",
   "type": "module",
   "main": "dist/utils.js",
