@@ -61,40 +61,40 @@ function calculateReward(blockHeight: number): number {
   return Math.round(STARTING_REWARD * Math.pow(Math.E, k * blockHeight));
 }
 
-function getDiff(blocks: Block[]): bigint {
-  const WINDOW_SIZE = 100;
-  const targetTime = BLOCK_TIME * WINDOW_SIZE; // e.g. 30s * 100 = 3000s
-
-  if (blocks.length < WINDOW_SIZE) {
+function getDiff(blocks: Block[]) {
+  if (blocks.length < 2) {
     return STARTING_DIFF;
   }
 
-  // Take last WINDOW_SIZE blocks
-  const recentBlocks = blocks.slice(-WINDOW_SIZE);
+  let difficulty = STARTING_DIFF;
 
-  // Actual timespan between oldest and newest blocks in window
-  const actualTime =
-    recentBlocks[recentBlocks.length - 1].timestamp - recentBlocks[0].timestamp;
+  for (let i = 1; i < blocks.length; i++) {
+    const prevTimestamp = BigInt(blocks[i - 1].timestamp);
+    const currTimestamp = BigInt(blocks[i].timestamp);
 
-  // Protect against zero or negative time
-  if (actualTime <= 0) return STARTING_DIFF;
+    let delta = currTimestamp - prevTimestamp;
+    if (delta <= 0n) delta = BigInt(BLOCK_TIME); // prevent zero or negative delta
 
-  // Calculate adjustment factor = expected / actual
-  // If actual > expected => blocks slower => difficulty down (easier)
-  // If actual < expected => blocks faster => difficulty up (harder)
-  let adjustment = targetTime / actualTime;
+    // Calculate ratio = delta / BLOCK_TIME as rational
+    let numerator = delta;
+    let denominator = BigInt(BLOCK_TIME);
 
-  // Clamp adjustment between 0.5x and 1.5x (adjust as needed for smoothness)
-  adjustment = Math.min(Math.max(adjustment, 0.5), 1.5);
+    // Clamp ratio between 0.5 and 1.5 (to avoid big jumps)
+    if (numerator * 2n < denominator) {
+      numerator = denominator;
+      denominator = 2n;
+    } else if (numerator * 2n > denominator * 3n) {
+      numerator = denominator * 3n;
+      denominator = 2n;
+    }
 
-  // Adjust difficulty accordingly
-  let newDiff = BigInt(Math.floor(Number(STARTING_DIFF) * adjustment));
+    // Update difficulty = difficulty * ratio
+    difficulty = (difficulty * numerator) / denominator;
 
-  // Clamp difficulty to be within bounds
-  if (newDiff > STARTING_DIFF) newDiff = STARTING_DIFF;
-  if (newDiff < 1n) newDiff = 1n; // avoid zero or negative difficulty
-
-  return newDiff;
+    // Clamp difficulty between 1 and STARTING_DIFF
+    if (difficulty > STARTING_DIFF) difficulty = STARTING_DIFF;
+    if (difficulty < 1n) difficulty = 1n;
+  }
 }
 
 function randomKeyPair() {
