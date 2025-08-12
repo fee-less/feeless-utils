@@ -62,35 +62,40 @@ function calculateReward(blockHeight: number): number {
 }
 
 function getDiff(blocks: Block[]): bigint {
-  let DIFF = STARTING_DIFF;
-  if (blocks.length < 2) return STARTING_DIFF;
+  const WINDOW_SIZE = 100;
+  const targetTime = BLOCK_TIME * WINDOW_SIZE; // e.g. 30s * 100 = 3000s
 
-  for (let i = 1; i < blocks.length; i++) {
-    const recentBlocks = blocks.slice(-100);
-
-    // Calculate timestamp differences between consecutive blocks
-    const deltas = [];
-    for (let i = 1; i < recentBlocks.length; i++) {
-      deltas.push(recentBlocks[i].timestamp - recentBlocks[i - 1].timestamp);
-    }
-
-    // Sum the deltas
-    const delta = deltas.reduce((acc, val) => acc + val, 0) / deltas.length;
-
-    const ratio = delta / BLOCK_TIME; // >1 if slow, <1 if fast
-
-    let multiplier = Math.round(ratio * 100); // e.g., 1.02 => 102
-    multiplier = Math.max(50, Math.min(multiplier, 150));
-    DIFF = (DIFF * BigInt(multiplier)) / 100n;
-
-    // Clamp DIFF between 0 and STARTING_DIFF
-    if (DIFF > STARTING_DIFF) DIFF = STARTING_DIFF;
-    if (DIFF < 0n) DIFF = 0n;
+  if (blocks.length < WINDOW_SIZE) {
+    return STARTING_DIFF;
   }
 
-  return DIFF;
-}
+  // Take last WINDOW_SIZE blocks
+  const recentBlocks = blocks.slice(-WINDOW_SIZE);
 
+  // Actual timespan between oldest and newest blocks in window
+  const actualTime =
+    recentBlocks[recentBlocks.length - 1].timestamp - recentBlocks[0].timestamp;
+
+  // Protect against zero or negative time
+  if (actualTime <= 0) return STARTING_DIFF;
+
+  // Calculate adjustment factor = expected / actual
+  // If actual > expected => blocks slower => difficulty down (easier)
+  // If actual < expected => blocks faster => difficulty up (harder)
+  let adjustment = targetTime / actualTime;
+
+  // Clamp adjustment between 0.5x and 1.5x (adjust as needed for smoothness)
+  adjustment = Math.min(Math.max(adjustment, 0.5), 1.5);
+
+  // Adjust difficulty accordingly
+  let newDiff = BigInt(Math.floor(Number(STARTING_DIFF) * adjustment));
+
+  // Clamp difficulty to be within bounds
+  if (newDiff > STARTING_DIFF) newDiff = STARTING_DIFF;
+  if (newDiff < 1n) newDiff = 1n; // avoid zero or negative difficulty
+
+  return newDiff;
+}
 
 function randomKeyPair() {
   const kp = ec.genKeyPair();
