@@ -79,9 +79,9 @@ function getDiff(blocks: Block[]): bigint {
 
     const ratio = Math.pow(delta / BLOCK_TIME, 1 / 4); // >1 if slow, <1 if fast
 
-    let multiplier = Math.round(ratio * 100); // e.g., 1.02 => 102
+    let multiplier = Math.round(ratio * 10000); // e.g., 1.02 => 102
     multiplier = Math.max(50, Math.min(multiplier, 150));
-    DIFF = (DIFF * BigInt(multiplier)) / 100n;
+    DIFF = (DIFF * BigInt(multiplier)) / 10000n;
 
     // Clamp DIFF between 0 and STARTING_DIFF
     if (DIFF > STARTING_DIFF) DIFF = STARTING_DIFF;
