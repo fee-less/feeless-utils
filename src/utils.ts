@@ -61,41 +61,36 @@ function calculateReward(blockHeight: number): number {
   return Math.round(STARTING_REWARD * Math.pow(Math.E, k * blockHeight));
 }
 
-function getDiff(blocks: Block[]) {
-  if (blocks.length < 2) {
-    return STARTING_DIFF;
-  }
-
-  let difficulty = STARTING_DIFF;
+function getDiff(blocks: Block[]): bigint {
+  let DIFF = STARTING_DIFF;
+  if (blocks.length < 2) return STARTING_DIFF;
 
   for (let i = 1; i < blocks.length; i++) {
-    const prevTimestamp = BigInt(blocks[i - 1].timestamp);
-    const currTimestamp = BigInt(blocks[i].timestamp);
+    const recentBlocks = blocks.slice(-100);
 
-    let delta = currTimestamp - prevTimestamp;
-    if (delta <= 0n) delta = BigInt(BLOCK_TIME); // prevent zero or negative delta
-
-    // Calculate ratio = delta / BLOCK_TIME as rational
-    let numerator = delta;
-    let denominator = BigInt(BLOCK_TIME);
-
-    // Clamp ratio between 0.5 and 1.5 (to avoid big jumps)
-    if (numerator * 2n < denominator) {
-      numerator = denominator;
-      denominator = 2n;
-    } else if (numerator * 2n > denominator * 3n) {
-      numerator = denominator * 3n;
-      denominator = 2n;
+    // Calculate timestamp differences between consecutive blocks
+    const deltas = [];
+    for (let i = 1; i < recentBlocks.length; i++) {
+      deltas.push(recentBlocks[i].timestamp - recentBlocks[i - 1].timestamp);
     }
 
-    // Update difficulty = difficulty * ratio
-    difficulty = (difficulty * numerator) / denominator;
+    // Sum the deltas
+    const delta = deltas.reduce((acc, val) => acc + val, 0) / deltas.length;
 
-    // Clamp difficulty between 1 and STARTING_DIFF
-    if (difficulty > STARTING_DIFF) difficulty = STARTING_DIFF;
-    if (difficulty < 1n) difficulty = 1n;
+    const ratio = Math.sqrt(delta / BLOCK_TIME); // >1 if slow, <1 if fast
+
+    let multiplier = Math.round(ratio * 100); // e.g., 1.02 => 102
+    multiplier = Math.max(50, Math.min(multiplier, 150));
+    DIFF = (DIFF * BigInt(multiplier)) / 100n;
+
+    // Clamp DIFF between 0 and STARTING_DIFF
+    if (DIFF > STARTING_DIFF) DIFF = STARTING_DIFF;
+    if (DIFF < 0n) DIFF = 0n;
   }
+
+  return DIFF;
 }
+
 
 function randomKeyPair() {
   const kp = ec.genKeyPair();
