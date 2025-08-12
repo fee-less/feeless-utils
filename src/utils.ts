@@ -109,7 +109,7 @@ function getDiff(blocks: Block[]) {
     }
   }
 
-  return difficulties;
+  return difficulties[difficulties.length - 1];
 }
 
 function randomKeyPair() {
