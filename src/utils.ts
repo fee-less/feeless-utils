@@ -61,36 +61,56 @@ function calculateReward(blockHeight: number): number {
   return Math.round(STARTING_REWARD * Math.pow(Math.E, k * blockHeight));
 }
 
-function getDiff(blocks: Block[]): bigint {
-  let DIFF = STARTING_DIFF;
-  if (blocks.length < 2) return STARTING_DIFF;
+function getDiff(blocks: Block[]) {
+  const RETARGET_INTERVAL = 100;
+  const MAX_ADJUST = 4n;
+  const targetTimespan = BigInt(RETARGET_INTERVAL) * BigInt(BLOCK_TIME); // ms
 
-  for (let i = 1; i < blocks.length; i++) {
-    const recentBlocks = blocks.slice(-100);
+  let difficulties = [];
+  let currentTarget = STARTING_DIFF;
 
-    // Calculate timestamp differences between consecutive blocks
-    const deltas = [];
-    for (let i = 1; i < recentBlocks.length; i++) {
-      deltas.push(recentBlocks[i].timestamp - recentBlocks[i - 1].timestamp);
-    }
-
-    // Sum the deltas
-    const delta = deltas.reduce((acc, val) => acc + val, 0) / deltas.length;
-
-    const ratio = Math.pow(delta / BLOCK_TIME, 1 / 4); // >1 if slow, <1 if fast
-
-    let multiplier = Math.round(ratio * 10000); // e.g., 1.02 => 102
-    multiplier = Math.max(50, Math.min(multiplier, 150));
-    DIFF = (DIFF * BigInt(multiplier)) / 10000n;
-
-    // Clamp DIFF between 0 and STARTING_DIFF
-    if (DIFF > STARTING_DIFF) DIFF = STARTING_DIFF;
-    if (DIFF < 0n) DIFF = 0n;
+  function medianTimePastAt(idx: number) {
+    if (idx <= 1) return BigInt(blocks[idx].timestamp);
+    const a = BigInt(blocks[idx].timestamp);
+    const b = BigInt(blocks[idx - 1].timestamp);
+    const c = BigInt(blocks[idx - 2].timestamp);
+    if ((a >= b && a <= c) || (a <= b && a >= c)) return a;
+    if ((b >= a && b <= c) || (b <= a && b >= c)) return b;
+    return c;
   }
 
-  return DIFF;
-}
+  for (let i = 0; i < blocks.length; i++) {
+    // Store difficulty for this block
+    difficulties.push(currentTarget);
 
+    // Check if we should retarget after this block
+    if ((i + 1) % RETARGET_INTERVAL === 0) {
+      const lastIndex = i;
+      const firstIndex = i - RETARGET_INTERVAL + 1;
+
+      const lastMTP = medianTimePastAt(lastIndex);
+      const firstMTP = medianTimePastAt(firstIndex);
+
+      let actualTimespan = lastMTP - firstMTP;
+      if (actualTimespan < 1n) actualTimespan = 1n;
+
+      // Clamp timespan
+      const minTimespan = targetTimespan / MAX_ADJUST;
+      const maxTimespan = targetTimespan * MAX_ADJUST;
+      if (actualTimespan < minTimespan) actualTimespan = minTimespan;
+      if (actualTimespan > maxTimespan) actualTimespan = maxTimespan;
+
+      // Adjust difficulty target
+      let newTarget = (currentTarget * actualTimespan) / targetTimespan;
+      if (newTarget > STARTING_DIFF) newTarget = STARTING_DIFF;
+      if (newTarget < 1n) newTarget = 1n;
+
+      currentTarget = newTarget;
+    }
+  }
+
+  return difficulties;
+}
 
 function randomKeyPair() {
   const kp = ec.genKeyPair();
