@@ -62,14 +62,15 @@ function calculateReward(blockHeight: number): number {
 }
 
 function getDiff(blocks: Block[]) {
-  const RETARGET_INTERVAL = 10;
+  const RETARGET_INTERVAL = 3; // retarget every 3 blocks
+  const LOOKBACK_BLOCKS = 10; // average over last 10 blocks
   const MAX_ADJUST = 4n;
-  const targetTimespan = BigInt(RETARGET_INTERVAL) * BigInt(BLOCK_TIME); // ms
+  const targetTimespan = BigInt(LOOKBACK_BLOCKS) * BigInt(BLOCK_TIME); // ms
 
-  let difficulties = [];
+  let difficulties: bigint[] = [];
   let currentTarget = STARTING_DIFF;
 
-  function medianTimePastAt(idx: number) {
+  function medianTimePastAt(idx: number): bigint {
     if (idx <= 1) return BigInt(blocks[idx].timestamp);
     const a = BigInt(blocks[idx].timestamp);
     const b = BigInt(blocks[idx - 1].timestamp);
@@ -80,28 +81,26 @@ function getDiff(blocks: Block[]) {
   }
 
   for (let i = 0; i < blocks.length; i++) {
-    // Store difficulty for this block
     difficulties.push(currentTarget);
 
-    // Check if we should retarget after this block
-    if ((i + 1) % RETARGET_INTERVAL === 0) {
-      const lastIndex = i;
-      const firstIndex = i - RETARGET_INTERVAL + 1;
+    if ((i + 1) % RETARGET_INTERVAL === 0 && i >= LOOKBACK_BLOCKS - 1) {
+      // Gather MTPs for last LOOKBACK_BLOCKS
+      let mtps: bigint[] = [];
+      for (let j = i - LOOKBACK_BLOCKS + 1; j <= i; j++) {
+        mtps.push(medianTimePastAt(j));
+      }
 
-      const lastMTP = medianTimePastAt(lastIndex);
-      const firstMTP = medianTimePastAt(firstIndex);
-
-      let actualTimespan = lastMTP - firstMTP;
-      if (actualTimespan < 1n) actualTimespan = 1n;
+      const actualTimespan = mtps[mtps.length - 1] - mtps[0] || 1n;
 
       // Clamp timespan
       const minTimespan = targetTimespan / MAX_ADJUST;
       const maxTimespan = targetTimespan * MAX_ADJUST;
-      if (actualTimespan < minTimespan) actualTimespan = minTimespan;
-      if (actualTimespan > maxTimespan) actualTimespan = maxTimespan;
+      let clampedTimespan = actualTimespan;
+      if (clampedTimespan < minTimespan) clampedTimespan = minTimespan;
+      if (clampedTimespan > maxTimespan) clampedTimespan = maxTimespan;
 
-      // Adjust difficulty target
-      let newTarget = (currentTarget * actualTimespan) / targetTimespan;
+      // Adjust difficulty
+      let newTarget = (currentTarget * clampedTimespan) / targetTimespan;
       if (newTarget > STARTING_DIFF) newTarget = STARTING_DIFF;
       if (newTarget < 1n) newTarget = 1n;
 
