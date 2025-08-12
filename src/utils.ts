@@ -62,45 +62,35 @@ function calculateReward(blockHeight: number): number {
 }
 
 function getDiff(blocks: Block[]) {
-  const RETARGET_INTERVAL = 3; // retarget every 3 blocks
-  const LOOKBACK_BLOCKS = 10; // average over last 10 blocks
-  const MAX_ADJUST = 4n;
-  const targetTimespan = BigInt(LOOKBACK_BLOCKS) * BigInt(BLOCK_TIME); // ms
+  const RETARGET_INTERVAL = 3;
+  const LOOKBACK_BLOCKS = 30;
+  const MAX_CHANGE_RATIO = 1.4; // allow ±40% change per retarget
 
-  let difficulties: bigint[] = [];
+  let difficulties = [];
   let currentTarget = STARTING_DIFF;
-
-  function medianTimePastAt(idx: number): bigint {
-    if (idx <= 1) return BigInt(blocks[idx].timestamp);
-    const a = BigInt(blocks[idx].timestamp);
-    const b = BigInt(blocks[idx - 1].timestamp);
-    const c = BigInt(blocks[idx - 2].timestamp);
-    if ((a >= b && a <= c) || (a <= b && a >= c)) return a;
-    if ((b >= a && b <= c) || (b <= a && b >= c)) return b;
-    return c;
-  }
 
   for (let i = 0; i < blocks.length; i++) {
     difficulties.push(currentTarget);
 
-    if ((i + 1) % RETARGET_INTERVAL === 0 && i >= LOOKBACK_BLOCKS - 1) {
-      // Gather MTPs for last LOOKBACK_BLOCKS
-      let mtps: bigint[] = [];
+    if ((i + 1) % RETARGET_INTERVAL === 0 && i >= LOOKBACK_BLOCKS) {
+      // Compute average block time over LOOKBACK_BLOCKS
+      let deltas = [];
       for (let j = i - LOOKBACK_BLOCKS + 1; j <= i; j++) {
-        mtps.push(medianTimePastAt(j));
+        deltas.push(blocks[j].timestamp - blocks[j - 1].timestamp);
       }
+      const avgDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length;
 
-      const actualTimespan = mtps[mtps.length - 1] - mtps[0] || 1n;
+      // Desired adjustment factor
+      let ratio = avgDelta / BLOCK_TIME;
 
-      // Clamp timespan
-      const minTimespan = targetTimespan / MAX_ADJUST;
-      const maxTimespan = targetTimespan * MAX_ADJUST;
-      let clampedTimespan = actualTimespan;
-      if (clampedTimespan < minTimespan) clampedTimespan = minTimespan;
-      if (clampedTimespan > maxTimespan) clampedTimespan = maxTimespan;
+      // Clamp ratio to avoid large jumps
+      if (ratio > MAX_CHANGE_RATIO) ratio = MAX_CHANGE_RATIO;
+      if (ratio < 1 / MAX_CHANGE_RATIO) ratio = 1 / MAX_CHANGE_RATIO;
 
-      // Adjust difficulty
-      let newTarget = (currentTarget * clampedTimespan) / targetTimespan;
+      // Apply adjustment
+      let newTarget = BigInt(Math.floor(Number(currentTarget) * ratio));
+
+      // Clamp absolute difficulty bounds
       if (newTarget > STARTING_DIFF) newTarget = STARTING_DIFF;
       if (newTarget < 1n) newTarget = 1n;
 
