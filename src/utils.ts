@@ -71,7 +71,7 @@ function getDiff(lastBlock: Block, prev_timestamp?: number): bigint {
   const MAX_ST = BLOCK_TIME * 4;
 
   // Use the stored diff from the last block
-  const target = BigInt(lastBlock.diff || STARTING_DIFF);
+  const target = BigInt(("0x" + lastBlock.diff) || STARTING_DIFF);
 
   // solve time since last block
   let dt =
