@@ -63,57 +63,84 @@ function calculateReward(blockHeight: number): number {
 }
 
 function getDiff(blocks: Block[]) {
+  // If there aren't at least 2 blocks, we can't infer a solve time yet.
   if (!blocks || blocks.length < 2) return STARTING_DIFF;
 
-  const TARGET_TIME = BLOCK_TIME; // 30s target (in ms)
-  const LOOKBACK_BLOCKS = 10; // median over last 10 blocks
-  const SMOOTHING_NUM = 1n; // EMA smoothing numerator
-  const SMOOTHING_DEN = 5n; // EMA smoothing denominator (1/5 = 20% change per step)
+  // --- Tunables (safe defaults) ---
+  const WINDOW = 60; // How many recent solvetimes to consider
+  const MAX_CHANGE_UP = 2n; // Max 2x easier per adjustment step
+  const MAX_CHANGE_DOWN = 2n; // Max 2x harder per adjustment step
+  const SCALE = 1_000_000n; // Fixed-point scale for ratios
 
-  const MIN_DIFFICULTY = 1n;
-  const MAX_DIFFICULTY = undefined; // or set a cap
+  // Per-solvetime clamping to damp spikes (e.g., bad clocks, bursts)
+  const MIN_ST = Math.floor(BLOCK_TIME / 4); // 0.25 * T
+  const MAX_ST = BLOCK_TIME * 4; // 4 * T
 
-  let currentTarget = STARTING_DIFF;
+  // Weighted average helper (LWMA): recent solvetimes get higher weights.
+  function lwmaSolveTime(endExclusive: number): bigint {
+    const start = Math.max(1, endExclusive - WINDOW);
+    const m = endExclusive - start; // number of intervals available
+    if (m <= 0) return BigInt(BLOCK_TIME);
 
-  for (let i = 1; i < blocks.length; i++) {
-    if (i >= LOOKBACK_BLOCKS) {
-      let times = [];
+    let wSum = 0n;
+    let stWeighted = 0n;
+    // weights: 1..m (newer => larger weight)
+    for (let i = start; i < endExclusive; i++) {
+      // Solve time between block i and i-1
+      let dt = blocks[i].timestamp - blocks[i - 1].timestamp;
+      if (!Number.isFinite(dt)) dt = BLOCK_TIME;
+      if (dt <= 0) dt = 1; // monotonic guard
+      // clamp spike/outlier impact
+      if (dt < MIN_ST) dt = MIN_ST;
+      else if (dt > MAX_ST) dt = MAX_ST;
 
-      for (let j = i - LOOKBACK_BLOCKS + 1; j <= i; j++) {
-        let dt = blocks[j].timestamp - blocks[j - 1].timestamp;
-
-        // clamp to avoid extreme skew
-        if (dt < TARGET_TIME * 0.5) dt = TARGET_TIME * 0.5;
-        if (dt > TARGET_TIME * 2.0) dt = TARGET_TIME * 2.0;
-
-        times.push(dt);
-      }
-
-      // sort to get median
-      times.sort((a, b) => a - b);
-      const medianDt = times[Math.floor(times.length / 2)];
-
-      // ratio = actual / target
-      const num = BigInt(medianDt);
-      const den = BigInt(TARGET_TIME);
-
-      // adjust difficulty toward desired ratio
-      let rawTarget = (currentTarget * den) / num;
-
-      // optional global limits
-      if (rawTarget < MIN_DIFFICULTY) rawTarget = MIN_DIFFICULTY;
-      if (MAX_DIFFICULTY && rawTarget > MAX_DIFFICULTY)
-        rawTarget = MAX_DIFFICULTY;
-
-      // EMA smoothing
-      currentTarget =
-        (currentTarget * (SMOOTHING_DEN - SMOOTHING_NUM) +
-          rawTarget * SMOOTHING_NUM) /
-        SMOOTHING_DEN;
+      const w = BigInt(i - start + 1); // 1..m
+      wSum += w;
+      stWeighted += w * BigInt(dt);
     }
+
+    if (wSum === 0n) return BigInt(BLOCK_TIME);
+    return stWeighted / wSum; // bigint milliseconds
   }
 
-  return currentTarget;
+  // Rate-limit ratio (fixed-point)
+  function clampRatio(r: bigint): bigint {
+    const minR = SCALE / MAX_CHANGE_DOWN; // e.g., 1/2 => 0.5
+    const maxR = SCALE * MAX_CHANGE_UP; // e.g., 2/1 => 2.0
+    if (r < minR) return minR;
+    if (r > maxR) return maxR;
+    return r;
+  }
+
+  // Deterministically walk the chain to the current target, then compute next.
+  let target = STARTING_DIFF;
+
+  // Step through historical blocks so difficulty depends only on chain history.
+  // For each height i, compute the target that *would have* produced block i.
+  for (let i = 1; i < blocks.length; i++) {
+    const st = lwmaSolveTime(i); // uses up to WINDOW recent intervals ending at i-1 -> i
+    // ratio = LWMA / TARGET
+    let ratio = (st * SCALE) / BigInt(BLOCK_TIME);
+    ratio = clampRatio(ratio);
+    // Increase target (easier) if blocks were slow; decrease if they were fast.
+    let nextTarget = (target * ratio) / SCALE;
+
+    // Keep within sane bounds
+    if (nextTarget < 1n) nextTarget = 1n;
+    if (nextTarget > STARTING_DIFF) nextTarget = STARTING_DIFF;
+
+    target = nextTarget;
+  }
+
+  const st = lwmaSolveTime(blocks.length);
+  let ratio = (st * SCALE) / BigInt(BLOCK_TIME);
+  ratio = clampRatio(ratio);
+  let nextTarget = (target * ratio) / SCALE;
+
+  if (nextTarget < 1n) nextTarget = 1n;
+  if (nextTarget > STARTING_DIFF) nextTarget = STARTING_DIFF;
+
+  return nextTarget;
 }
 
 function randomKeyPair() {
