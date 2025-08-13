@@ -7,7 +7,7 @@ type TokenMint = {
   miningReward?: number;
   airdrop: number;
   token: string;
-}
+};
 
 type Transaction = {
   sender: string;
@@ -19,7 +19,7 @@ type Transaction = {
   token?: string;
   mint?: TokenMint;
   unlock?: number;
-}
+};
 
 type Block = {
   timestamp: number;
@@ -29,9 +29,9 @@ type Block = {
   signature: string;
   proposer: string;
   hash: string;
-}
+};
 
-type MintedTokenEntry = { miningReward: number, airdrop: number };
+type MintedTokenEntry = { miningReward: number; airdrop: number };
 type MintedTokens = Map<string, MintedTokenEntry>;
 
 type EventPayload = {
@@ -45,9 +45,10 @@ const STARTING_REWARD = FLSStoFPoints(100);
 const BASE_MINT_FEE = FLSStoFPoints(1000); // Minimum minting fee in fPoints
 const BLOCK_TIME = 30000;
 const DEV_FEE = 0.09;
-const DEV_WALLET = "03bea510ff0689107a3a7b3ff3968e0554672142bbf6fc6db75d01e7aa6620e4f8";
-const STARTING_DIFF = BigInt("0x0FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
-
+const DEV_WALLET =
+  "03bea510ff0689107a3a7b3ff3968e0554672142bbf6fc6db75d01e7aa6620e4f8";
+const STARTING_DIFF =
+  0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn;
 function FLSStoFPoints(flss: number) {
   return Math.round(flss * Math.pow(10, POINTS));
 }
@@ -64,46 +65,92 @@ function calculateReward(blockHeight: number): number {
 function getDiff(blocks: Block[]) {
   const RETARGET_INTERVAL = 3;
   const LOOKBACK_BLOCKS = 30;
-  const MAX_CHANGE_RATIO = 1.4; // allow ±40% change per retarget
 
-  let difficulties = [];
-  let currentTarget = STARTING_DIFF;
+  // ±40% in fractional form 7/5 ≈ 1.4 (no floats)
+  const MAX_CHANGE_NUM = 7n;
+  const MAX_CHANGE_DEN = 5n;
+
+  // (optional) global difficulty limits
+  const MIN_DIFFICULTY: bigint | undefined = 1n;
+  const MAX_DIFFICULTY: bigint | undefined = undefined;
+
+  if (!blocks || blocks.length === 0) return STARTING_DIFF;
+
+  let currentTarget: bigint = STARTING_DIFF;
 
   for (let i = 0; i < blocks.length; i++) {
-    difficulties.push(currentTarget);
-
+    // Retarget every RETARGET_INTERVAL, when we already have a full lookback
     if ((i + 1) % RETARGET_INTERVAL === 0 && i >= LOOKBACK_BLOCKS) {
-      // Compute average block time over LOOKBACK_BLOCKS
-      let deltas = [];
+      let totalDelta = 0;
+      let valid = true;
+
+      // Hardening: clamp individual dt values to limit the influence of outliers/time-warp.
+      // Note: BLOCK_TIME and timestamps must be in the same units (here: ms).
+      const minDt = Math.max(1, Math.floor(BLOCK_TIME / 4));
+      const maxDt = Math.max(minDt + 1, BLOCK_TIME * 4);
+
       for (let j = i - LOOKBACK_BLOCKS + 1; j <= i; j++) {
-        deltas.push(blocks[j].timestamp - blocks[j - 1].timestamp);
+        let dt = blocks[j].timestamp - blocks[j - 1].timestamp;
+
+        if (!Number.isFinite(dt) || dt <= 0) {
+          valid = false;
+          break;
+        }
+
+        // per-block clamp
+        if (dt < minDt) dt = minDt;
+        if (dt > maxDt) dt = maxDt;
+
+        totalDelta += dt;
       }
-      const avgDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+      if (!valid) continue;
 
-      // Desired adjustment factor
-      let ratio = avgDelta / BLOCK_TIME;
+      // ratio = (totalDelta / LOOKBACK_BLOCKS) / BLOCK_TIME
+      //       = totalDelta / (LOOKBACK_BLOCKS * BLOCK_TIME)
+      const num = BigInt(totalDelta);
+      const den = BigInt(LOOKBACK_BLOCKS * BLOCK_TIME);
 
-      // Clamp ratio to avoid large jumps
-      if (ratio > MAX_CHANGE_RATIO) ratio = MAX_CHANGE_RATIO;
-      if (ratio < 1 / MAX_CHANGE_RATIO) ratio = 1 / MAX_CHANGE_RATIO;
+      // Clamp num/den to [1/MAX_CHANGE, MAX_CHANGE] without floats:
+      // tooHigh: num/den > MAX_CHANGE_NUM/MAX_CHANGE_DEN  <=>  num * MAX_CHANGE_DEN > den * MAX_CHANGE_NUM
+      const tooHigh = num * MAX_CHANGE_DEN > den * MAX_CHANGE_NUM;
+      const tooLow = num * MAX_CHANGE_NUM < den * MAX_CHANGE_DEN; // num/den < 1/MAX_CHANGE
 
-      // Apply adjustment
-      let newTarget = BigInt(Math.floor(Number(currentTarget) * ratio));
+      let adjNum = num;
+      let adjDen = den;
 
-      // Clamp absolute difficulty bounds
-      if (newTarget > STARTING_DIFF) newTarget = STARTING_DIFF;
-      if (newTarget < 1n) newTarget = 1n;
+      if (tooHigh) {
+        // set exactly to MAX_CHANGE = 7/5
+        adjNum = den * MAX_CHANGE_NUM;
+        adjDen = MAX_CHANGE_DEN * den;
+      } else if (tooLow) {
+        // set exactly to 1/MAX_CHANGE = 5/7
+        adjNum = den * MAX_CHANGE_DEN;
+        adjDen = MAX_CHANGE_NUM * den;
+      }
+
+      // Apply correction: round to nearest to reduce bias
+      const numerator = currentTarget * adjNum + adjDen / 2n;
+      let newTarget = numerator / adjDen;
+
+      // Global limits (optional)
+      if (MIN_DIFFICULTY !== undefined && newTarget < MIN_DIFFICULTY)
+        newTarget = MIN_DIFFICULTY;
+      if (MAX_DIFFICULTY !== undefined && newTarget > MAX_DIFFICULTY)
+        newTarget = MAX_DIFFICULTY;
 
       currentTarget = newTarget;
     }
   }
 
-  return difficulties[difficulties.length - 1];
+  return currentTarget;
 }
 
 function randomKeyPair() {
   const kp = ec.genKeyPair();
-  return { pub: kp.getPublic().encode("hex", true), priv: kp.getPrivate().toString("hex") };
+  return {
+    pub: kp.getPublic().encode("hex", true),
+    priv: kp.getPrivate().toString("hex"),
+  };
 }
 
 function getPublicKey(priv: string) {
@@ -124,18 +171,43 @@ async function hashArgon(msg: string) {
   }
   const argon2 = await import("argon2");
 
-  const salt = Buffer.from('feeless-argon2-salt');
+  const salt = Buffer.from("feeless-argon2-salt");
   const hashBuffer = await argon2.hash(msg, {
     raw: true,
     salt,
     timeCost: 1,
     parallelism: 2,
-    memoryCost: 2 ** 14
+    memoryCost: 2 ** 14,
   });
 
-  const hexString = hashBuffer.toString('hex');
+  const hexString = hashBuffer.toString("hex");
   return BigInt("0x" + hexString);
 }
 
-export type { Transaction, Block, EventPayload, TokenMint, MintedTokens, MintedTokenEntry };
-export { MAX_SUPPLY, STARTING_REWARD, BLOCK_TIME, POINTS, DEV_FEE, BASE_MINT_FEE, calculateMintFee, DEV_WALLET, STARTING_DIFF, FLSStoFPoints, fPointsToFLSS, calculateReward, getDiff, randomKeyPair, getPublicKey, hashArgon, FeelessClient };
+export type {
+  Transaction,
+  Block,
+  EventPayload,
+  TokenMint,
+  MintedTokens,
+  MintedTokenEntry,
+};
+export {
+  MAX_SUPPLY,
+  STARTING_REWARD,
+  BLOCK_TIME,
+  POINTS,
+  DEV_FEE,
+  BASE_MINT_FEE,
+  calculateMintFee,
+  DEV_WALLET,
+  STARTING_DIFF,
+  FLSStoFPoints,
+  fPointsToFLSS,
+  calculateReward,
+  getDiff,
+  randomKeyPair,
+  getPublicKey,
+  hashArgon,
+  FeelessClient,
+};
