@@ -63,82 +63,53 @@ function calculateReward(blockHeight: number): number {
 }
 
 function getDiff(blocks: Block[]) {
-  const RETARGET_INTERVAL = 3;
-  const LOOKBACK_BLOCKS = 30;
+  if (!blocks || blocks.length < 2) return STARTING_DIFF;
 
-  // ±40% in fractional form 7/5 ≈ 1.4 (no floats)
-  const MAX_CHANGE_NUM = 7n;
-  const MAX_CHANGE_DEN = 5n;
+  const TARGET_TIME = BLOCK_TIME; // 30s target (in ms)
+  const LOOKBACK_BLOCKS = 10; // median over last 10 blocks
+  const SMOOTHING_NUM = 1n; // EMA smoothing numerator
+  const SMOOTHING_DEN = 5n; // EMA smoothing denominator (1/5 = 20% change per step)
 
-  // (optional) global difficulty limits
-  const MIN_DIFFICULTY: bigint | undefined = 1n;
-  const MAX_DIFFICULTY: bigint | undefined = undefined;
+  const MIN_DIFFICULTY = 1n;
+  const MAX_DIFFICULTY = undefined; // or set a cap
 
-  if (!blocks || blocks.length === 0) return STARTING_DIFF;
+  let currentTarget = STARTING_DIFF;
 
-  let currentTarget: bigint = STARTING_DIFF;
-
-  for (let i = 0; i < blocks.length; i++) {
-    // Retarget every RETARGET_INTERVAL, when we already have a full lookback
-    if ((i + 1) % RETARGET_INTERVAL === 0 && i >= LOOKBACK_BLOCKS) {
-      let totalDelta = 0;
-      let valid = true;
-
-      // Hardening: clamp individual dt values to limit the influence of outliers/time-warp.
-      // Note: BLOCK_TIME and timestamps must be in the same units (here: ms).
-      const minDt = Math.max(1, Math.floor(BLOCK_TIME / 4));
-      const maxDt = Math.max(minDt + 1, BLOCK_TIME * 4);
+  for (let i = 1; i < blocks.length; i++) {
+    if (i >= LOOKBACK_BLOCKS) {
+      let times = [];
 
       for (let j = i - LOOKBACK_BLOCKS + 1; j <= i; j++) {
         let dt = blocks[j].timestamp - blocks[j - 1].timestamp;
 
-        if (!Number.isFinite(dt) || dt <= 0) {
-          valid = false;
-          break;
-        }
+        // clamp to avoid extreme skew
+        if (dt < TARGET_TIME * 0.5) dt = TARGET_TIME * 0.5;
+        if (dt > TARGET_TIME * 2.0) dt = TARGET_TIME * 2.0;
 
-        // per-block clamp
-        if (dt < minDt) dt = minDt;
-        if (dt > maxDt) dt = maxDt;
-
-        totalDelta += dt;
-      }
-      if (!valid) continue;
-
-      // ratio = (totalDelta / LOOKBACK_BLOCKS) / BLOCK_TIME
-      //       = totalDelta / (LOOKBACK_BLOCKS * BLOCK_TIME)
-      const num = BigInt(totalDelta);
-      const den = BigInt(LOOKBACK_BLOCKS * BLOCK_TIME);
-
-      // Clamp num/den to [1/MAX_CHANGE, MAX_CHANGE] without floats:
-      // tooHigh: num/den > MAX_CHANGE_NUM/MAX_CHANGE_DEN  <=>  num * MAX_CHANGE_DEN > den * MAX_CHANGE_NUM
-      const tooHigh = num * MAX_CHANGE_DEN > den * MAX_CHANGE_NUM;
-      const tooLow = num * MAX_CHANGE_NUM < den * MAX_CHANGE_DEN; // num/den < 1/MAX_CHANGE
-
-      let adjNum = num;
-      let adjDen = den;
-
-      if (tooHigh) {
-        // set exactly to MAX_CHANGE = 7/5
-        adjNum = den * MAX_CHANGE_NUM;
-        adjDen = MAX_CHANGE_DEN * den;
-      } else if (tooLow) {
-        // set exactly to 1/MAX_CHANGE = 5/7
-        adjNum = den * MAX_CHANGE_DEN;
-        adjDen = MAX_CHANGE_NUM * den;
+        times.push(dt);
       }
 
-      // Apply correction: round to nearest to reduce bias
-      const numerator = currentTarget * adjNum + adjDen / 2n;
-      let newTarget = numerator / adjDen;
+      // sort to get median
+      times.sort((a, b) => a - b);
+      const medianDt = times[Math.floor(times.length / 2)];
 
-      // Global limits (optional)
-      if (MIN_DIFFICULTY !== undefined && newTarget < MIN_DIFFICULTY)
-        newTarget = MIN_DIFFICULTY;
-      if (MAX_DIFFICULTY !== undefined && newTarget > MAX_DIFFICULTY)
-        newTarget = MAX_DIFFICULTY;
+      // ratio = actual / target
+      const num = BigInt(medianDt);
+      const den = BigInt(TARGET_TIME);
 
-      currentTarget = newTarget;
+      // adjust difficulty toward desired ratio
+      let rawTarget = (currentTarget * den) / num;
+
+      // optional global limits
+      if (rawTarget < MIN_DIFFICULTY) rawTarget = MIN_DIFFICULTY;
+      if (MAX_DIFFICULTY && rawTarget > MAX_DIFFICULTY)
+        rawTarget = MAX_DIFFICULTY;
+
+      // EMA smoothing
+      currentTarget =
+        (currentTarget * (SMOOTHING_DEN - SMOOTHING_NUM) +
+          rawTarget * SMOOTHING_NUM) /
+        SMOOTHING_DEN;
     }
   }
 
