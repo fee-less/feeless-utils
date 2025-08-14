@@ -72,21 +72,26 @@ function getDiff(blocks: Block[]): bigint {
   // Take the last up to N blocks
   const tail = blocks.slice(-Math.min(N, blocks.length));
 
-  // Calculate median interval
-  const intervals = [];
+  // Calculate weighted average interval
+  const intervals: number[] = [];
   for (let i = 1; i < tail.length; i++) {
     const dt = Number(tail[i].timestamp) - Number(tail[i - 1].timestamp);
     intervals.push(dt > 0 ? dt : 1);
   }
   if (intervals.length === 0) return STARTING_DIFF;
 
-  const sorted = intervals.slice().sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  const medianInterval =
-    sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  // Weighted average: newer intervals have higher weight
+  let weightedSum = 0;
+  let weightTotal = 0;
+  for (let i = 0; i < intervals.length; i++) {
+    const weight = i + 1; // older blocks = smaller weight, newer = bigger
+    weightedSum += intervals[i] * weight;
+    weightTotal += weight;
+  }
+  const weightedAvg = weightedSum / weightTotal;
 
   const targetTime = BLOCK_TIME;
-  let ratio = medianInterval / targetTime;
+  let ratio = weightedAvg / targetTime;
 
   // Clamp ratio to avoid large spikes
   const MIN_FACTOR = 0.85;
