@@ -63,36 +63,45 @@ function calculateReward(blockHeight: number): number {
   return Math.round(STARTING_REWARD * Math.pow(Math.E, k * blockHeight));
 }
 
-function getDiff(lastBlock: Block, prev_timestamp?: number): bigint {
+function getDiff(blocks: Block[]): bigint {
+  const LOOKBACK = 10;
   const SCALE = 1_000_000n;
   const MAX_CHANGE_UP = 2n;
   const MAX_CHANGE_DOWN = 2n;
   const MIN_ST = Math.floor(BLOCK_TIME / 4);
   const MAX_ST = BLOCK_TIME * 4;
 
-  // Use the stored diff from the last block
-  const target = BigInt(("0x" + lastBlock.diff) || STARTING_DIFF);
+  if (!blocks || blocks.length < 2) return STARTING_DIFF;
 
-  // solve time since last block
-  let dt =
-    lastBlock.timestamp - (prev_timestamp ?? lastBlock.timestamp - BLOCK_TIME);
-  if (!Number.isFinite(dt) || dt <= 0) dt = 1;
-  if (dt < MIN_ST) dt = MIN_ST;
-  else if (dt > MAX_ST) dt = MAX_ST;
+  // Limit to last LOOKBACK blocks
+  const slice = blocks.slice(-LOOKBACK);
 
-  const st = BigInt(dt);
+  const lastBlock = slice[slice.length - 1];
+  const target = BigInt("0x" + lastBlock.diff || STARTING_DIFF);
 
-  // calculate ratio
-  let ratio = (st * SCALE) / BigInt(BLOCK_TIME);
+  // Calculate average solve time
+  let totalDt = 0;
+  for (let i = 1; i < slice.length; i++) {
+    let dt = slice[i].timestamp - slice[i - 1].timestamp;
+    if (dt < MIN_ST) dt = MIN_ST;
+    if (dt > MAX_ST) dt = MAX_ST;
+    totalDt += dt;
+  }
+  const avgDt = Math.floor(totalDt / (slice.length - 1));
+
+  // Calculate ratio vs target time
+  let ratio = (BigInt(avgDt) * SCALE) / BigInt(BLOCK_TIME);
   if (ratio < SCALE / MAX_CHANGE_DOWN) ratio = SCALE / MAX_CHANGE_DOWN;
   if (ratio > SCALE * MAX_CHANGE_UP) ratio = SCALE * MAX_CHANGE_UP;
 
+  // New difficulty
   let nextTarget = (target * ratio) / SCALE;
   if (nextTarget < 1n) nextTarget = 1n;
   if (nextTarget > STARTING_DIFF) nextTarget = STARTING_DIFF;
 
   return nextTarget;
 }
+
 
 function randomKeyPair() {
   const kp = ec.genKeyPair();
