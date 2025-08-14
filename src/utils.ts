@@ -64,7 +64,7 @@ function calculateReward(blockHeight: number): number {
 }
 
 function getDiff(blocks: Block[]): bigint {
-  const N = 10;
+  const N = 50;
   if (!blocks || blocks.length < 2) {
     return STARTING_DIFF;
   }
