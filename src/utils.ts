@@ -64,44 +64,56 @@ function calculateReward(blockHeight: number): number {
 }
 
 function getDiff(blocks: Block[]): bigint {
-  const LOOKBACK = 10;
-  const SCALE = 1_000_000n;
-  const MAX_CHANGE_UP = 2n;
-  const MAX_CHANGE_DOWN = 2n;
-  const MIN_ST = Math.floor(BLOCK_TIME / 4);
-  const MAX_ST = BLOCK_TIME * 4;
-
-  if (!blocks || blocks.length < 2) return STARTING_DIFF;
-
-  // Limit to last LOOKBACK blocks
-  const slice = blocks.slice(-LOOKBACK);
-
-  const lastBlock = slice[slice.length - 1];
-  const target = BigInt("0x" + lastBlock.diff || STARTING_DIFF);
-
-  // Calculate average solve time
-  let totalDt = 0;
-  for (let i = 1; i < slice.length; i++) {
-    let dt = slice[i].timestamp - slice[i - 1].timestamp;
-    if (dt < MIN_ST) dt = MIN_ST;
-    if (dt > MAX_ST) dt = MAX_ST;
-    totalDt += dt;
+  const N = 10;
+  if (!blocks || blocks.length < 2) {
+    return STARTING_DIFF;
   }
-  const avgDt = Math.floor(totalDt / (slice.length - 1));
 
-  // Calculate ratio vs target time
-  let ratio = (BigInt(avgDt) * SCALE) / BigInt(BLOCK_TIME);
-  if (ratio < SCALE / MAX_CHANGE_DOWN) ratio = SCALE / MAX_CHANGE_DOWN;
-  if (ratio > SCALE * MAX_CHANGE_UP) ratio = SCALE * MAX_CHANGE_UP;
+  // Take the last up to N blocks
+  const tail = blocks.slice(-Math.min(N, blocks.length));
 
-  // New difficulty
-  let nextTarget = (target * ratio) / SCALE;
-  if (nextTarget < 1n) nextTarget = 1n;
-  if (nextTarget > STARTING_DIFF) nextTarget = STARTING_DIFF;
+  // Calculate median interval
+  const intervals = [];
+  for (let i = 1; i < tail.length; i++) {
+    const dt = Number(tail[i].timestamp) - Number(tail[i - 1].timestamp);
+    intervals.push(dt > 0 ? dt : 1);
+  }
+  if (intervals.length === 0) return STARTING_DIFF;
 
-  return nextTarget;
+  const sorted = intervals.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const medianInterval =
+    sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+
+  const targetTime = BLOCK_TIME;
+  let ratio = medianInterval / targetTime;
+
+  // Clamp ratio to avoid large spikes
+  const MIN_FACTOR = 0.85;
+  const MAX_FACTOR = 1.15;
+  if (ratio < MIN_FACTOR) ratio = MIN_FACTOR;
+  if (ratio > MAX_FACTOR) ratio = MAX_FACTOR;
+
+  // Parse previous difficulty as bigint from hex (no 0x in string)
+  let prevDiff;
+  try {
+    const raw = tail[tail.length - 1].diff;
+    prevDiff = BigInt("0x" + raw);
+  } catch (e) {
+    prevDiff = STARTING_DIFF;
+  }
+
+  // Apply ratio using bigint-safe scaling
+  const SCALE = 1_000_000n;
+  const factorInt = BigInt(Math.floor(ratio * Number(SCALE)));
+  let newDiff = (prevDiff * factorInt) / SCALE;
+
+  // Clamp final difficulty
+  if (newDiff < 1n) newDiff = 1n;
+  if (newDiff > STARTING_DIFF) newDiff = STARTING_DIFF;
+
+  return newDiff;
 }
-
 
 function randomKeyPair() {
   const kp = ec.genKeyPair();
