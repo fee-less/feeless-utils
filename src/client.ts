@@ -41,6 +41,7 @@ export class FeelessClient {
   public ready: boolean = false;
   public onblock: (block: Block) => void = () => {};
   public onutx: (tx: Transaction) => void = () => {};
+  public onclose: () => void = () => {};
   public timeout = 2000;
 
   constructor(node: string, nodeHttp: string, privateKey: string) {
@@ -78,6 +79,13 @@ export class FeelessClient {
               this.onutx(airdropTx);
             }
           }
+        });
+        this.ws.addEventListener("close", (event) => {
+          this.onclose();
+        });
+
+        this.ws.addEventListener("error", (err) => {
+          this.onclose();
         });
         resolve(true);
       };
