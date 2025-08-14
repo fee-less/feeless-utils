@@ -47,9 +47,10 @@ const BASE_MINT_FEE = FLSStoFPoints(1000); // Minimum minting fee in fPoints
 const BLOCK_TIME = 30000;
 const DEV_FEE = 0.09;
 const DEV_WALLET =
-  "03bea510ff0689107a3a7b3ff3968e0554672142bbf6fc6db75d01e7aa6620e4f8";
+  "02b4a4887c88e80d32fd9fd6317bbaac2a28c4070feb6d93f82bbefc52f5b85f13";
 const STARTING_DIFF =
   0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn;
+const TAIL = 30;
 function FLSStoFPoints(flss: number) {
   return Math.round(flss * Math.pow(10, POINTS));
 }
@@ -64,7 +65,7 @@ function calculateReward(blockHeight: number): number {
 }
 
 function getDiff(blocks: Block[]): bigint {
-  const N = 50;
+  const N = TAIL;
   if (!blocks || blocks.length < 2) {
     return STARTING_DIFF;
   }
@@ -177,6 +178,7 @@ export {
   calculateMintFee,
   DEV_WALLET,
   STARTING_DIFF,
+  TAIL,
   FLSStoFPoints,
   fPointsToFLSS,
   calculateReward,
