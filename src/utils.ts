@@ -45,7 +45,7 @@ const MAX_SUPPLY = FLSStoFPoints(100000000);
 const STARTING_REWARD = FLSStoFPoints(100);
 const BASE_MINT_FEE = FLSStoFPoints(1000); // Minimum minting fee in fPoints
 const BLOCK_TIME = 30000;
-const DEV_FEE = 0.09;
+const DEV_FEE = 0.07;
 const DEV_WALLET =
   "02b4a4887c88e80d32fd9fd6317bbaac2a28c4070feb6d93f82bbefc52f5b85f13";
 const STARTING_DIFF =
