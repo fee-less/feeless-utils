@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Test Local Module</title>
+  </head>
+  <body>
+    <button id="testBtn">Test</button>
+    <script type="module">
+      import FeelessClient from "./dist/bundle.js";
+
+      async function start() {
+        const fc = new FeelessClient(
+          "ws://localhost:6062",
+          "http://localhost:8001",
+          "",
+          true
+        );
+        await fc.init();
+        console.log(await fc.placeTXV2("burn", 1));
+      }
+
+      document.getElementById("testBtn").addEventListener("click", start);
+    </script>
+  </body>
+</html>

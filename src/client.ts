@@ -1,18 +1,25 @@
-import cryptoJS from 'crypto-js';
+import cryptoJS from "crypto-js";
 const { SHA256 } = cryptoJS;
 import pkg from "elliptic";
 import type { ec as ECType } from "elliptic";
 const { ec: EC } = pkg;
-import { EventPayload, Transaction, Block, DEV_WALLET, TokenMint, MintedTokenEntry } from "./utils.js";
+import {
+  EventPayload,
+  Transaction,
+  Block,
+  DEV_WALLET,
+  TokenMint,
+  MintedTokenEntry,
+} from "./utils.js";
 
 const ec = new EC("secp256k1");
 
 interface TransactionHistory {
-  type: 'send' | 'receive' | 'mint';
+  type: "send" | "receive" | "mint";
   amount: number;
   token?: string;
   timestamp: number;
-  status: 'confirmed' | 'pending';
+  status: "confirmed" | "pending";
   address: string;
   blockHeight?: number;
 }
@@ -38,58 +45,124 @@ export class FeelessClient {
   private pub: string;
   private http: string;
   private seenMsgs: string[] = [];
+  private port: null | any = null;
   public ready: boolean = false;
   public onblock: (block: Block) => void = () => {};
   public onutx: (tx: Transaction) => void = () => {};
   public onclose: () => void = () => {};
   public timeout = 2000;
+  public useHardWallet;
 
-  constructor(node: string, nodeHttp: string, privateKey: string) {
+  constructor(
+    node: string,
+    nodeHttp: string,
+    privateKey: string,
+    useHardWallet: boolean = false
+  ) {
     this.http = nodeHttp;
     this.ws = new WebSocket(node);
     this.keys = ec.keyFromPrivate(privateKey);
-    this.pub = this.keys.getPublic().encode("hex", true);
+    this.pub = useHardWallet ? "0" : this.keys.getPublic().encode("hex", true);
     this.priv = privateKey;
+    this.useHardWallet = useHardWallet;
   }
 
-  init() {
-    return new Promise<boolean>((resolve) => {
-      this.ws.onopen = () => {
-        this.ready = true;
-        this.ws.addEventListener("message", (event: any) => {
-          if (this.seenMsgs.includes(SHA256(event.data.toString()).toString()))
-            return;
-          this.seenMsgs.push(SHA256(event.data.toString()).toString());
-          const pl: EventPayload = JSON.parse(event.data.toString());
-          if (pl.event === "block") this.onblock(pl.data as Block);
-          if (pl.event === "tx") {
-            const tx = pl.data as Transaction;
-            this.onutx(tx);
-            // If there's an airdrop amount, create and push an airdrop transaction from mint to minter
-            if (tx.mint && tx.mint.airdrop > 0) {
-              const airdropTx: Transaction = {
-                sender: "mint",
-                receiver: tx.sender, // Airdrop goes to the minter
-                amount: tx.mint.airdrop,
-                signature: "mint",
-                nonce: Math.round(Math.random() * 1e6),
-                timestamp: Date.now(),
-                token: tx.mint.token,
-              };
-              this.onutx(airdropTx);
-            }
-          }
-        });
-        this.ws.addEventListener("close", (event) => {
-          this.onclose();
-        });
+  async runHardWalletCommand(command: string): Promise<string> {
+    if (!this.port) {
+      throw new Error("Serial port not initialized");
+    }
 
-        this.ws.addEventListener("error", (err) => {
-          this.onclose();
-        });
-        resolve(true);
-      };
-      this.ws.onerror = () => resolve(false);
+    console.log("Running wallet command:", command);
+    // WRITE COMMAND
+    const writer = this.port.writable.getWriter();
+    await writer.write(new TextEncoder().encode(command + "\n"));
+    writer.releaseLock();
+
+    // READ RESPONSE
+    const textDecoder = new TextDecoderStream();
+    const readableClosed = this.port.readable.pipeTo(textDecoder.writable);
+    const reader = textDecoder.readable.getReader();
+
+    console.log("Reading wallet response...");
+    let line = "";
+    try {
+      const { value, done } = await reader.read();
+      line = value ?? "";
+    } finally {
+      // ✅ cancel the reader properly
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+      await readableClosed.catch(() => {});
+    }
+
+    console.log("Done!");
+    return line.trim().toLowerCase();
+  }
+
+  init(): Promise<boolean> {
+    return new Promise<boolean>((resolve, reject) => {
+      // Hard wallet setup promise
+      const hardWalletPromise = this.useHardWallet
+        ? // @ts-ignore
+          navigator.serial
+            .requestPort()
+            .then((port: any) => {
+              this.port = port;
+              return this.port.open({ baudRate: 115200 });
+            })
+            .then(() => this.runHardWalletCommand("PUBLIC"))
+            .then((pub: string) => {
+              this.pub = pub;
+            })
+        : Promise.resolve();
+
+      // WebSocket open promise
+      const wsPromise = new Promise<void>((wsResolve) => {
+        this.ws.onopen = () => {
+          this.ready = true;
+
+          // Set up WS listeners
+          this.ws.addEventListener("message", (event: any) => {
+            if (
+              this.seenMsgs.includes(SHA256(event.data.toString()).toString())
+            )
+              return;
+            this.seenMsgs.push(SHA256(event.data.toString()).toString());
+
+            const pl: EventPayload = JSON.parse(event.data.toString());
+            if (pl.event === "block") this.onblock(pl.data as Block);
+            if (pl.event === "tx") {
+              const tx = pl.data as Transaction;
+              this.onutx(tx);
+
+              if (tx.mint && tx.mint.airdrop > 0) {
+                const airdropTx: Transaction = {
+                  sender: "mint",
+                  receiver: tx.sender,
+                  amount: tx.mint.airdrop,
+                  signature: "mint",
+                  nonce: Math.round(Math.random() * 1e6),
+                  timestamp: Date.now(),
+                  token: tx.mint.token,
+                };
+                this.onutx(airdropTx);
+              }
+            }
+          });
+
+          this.ws.addEventListener("close", () => this.onclose());
+          this.ws.addEventListener("error", () => this.onclose());
+
+          wsResolve();
+        };
+        this.ws.onerror = (err) => reject(err);
+      });
+
+      // Wait for both hard wallet and WS to finish
+      hardWalletPromise
+        .then(() => wsPromise)
+        .then(() => resolve(true))
+        .catch((err: any) => reject(err));
     });
   }
 
@@ -107,6 +180,10 @@ export class FeelessClient {
 
   signMessage(msg: string) {
     return this.keys.sign(SHA256(msg).toString()).toDER("hex");
+  }
+
+  async signMessageHardWallet(msg: string) {
+    return this.runHardWalletCommand("SIGN " + msg);
   }
 
   async pollBalance(
@@ -206,9 +283,9 @@ export class FeelessClient {
       unlock: locked || undefined,
     };
     if (token) tx.token = token;
-    tx.signature = this.keys
-      .sign(SHA256(JSON.stringify(tx)).toString())
-      .toDER("hex");
+    tx.signature = !this.useHardWallet
+      ? this.signMessage(JSON.stringify(tx))
+      : await this.signMessageHardWallet(JSON.stringify(tx));
     const pl: EventPayload = {
       event: "tx",
       data: tx,
@@ -235,12 +312,12 @@ export class FeelessClient {
       signature: "",
       nonce: Math.round(Math.random() * 1e6),
       timestamp: Date.now(),
-      unlock: locked || undefined
+      unlock: locked || undefined,
     };
     if (token) tx.token = token;
-    tx.signature = this.keys
-      .sign(SHA256(JSON.stringify(tx)).toString())
-      .toDER("hex");
+    tx.signature = !this.useHardWallet
+      ? this.signMessage(JSON.stringify(tx))
+      : await this.signMessageHardWallet(JSON.stringify(tx));
     const pl: EventPayload = {
       event: "tx",
       data: tx,
@@ -275,14 +352,14 @@ export class FeelessClient {
       timestamp: Date.now(),
       mint: tokenMint,
     };
-    mintTx.signature = this.keys
-      .sign(SHA256(JSON.stringify(mintTx)).toString())
-      .toDER("hex");
+    mintTx.signature = !this.useHardWallet
+      ? this.signMessage(JSON.stringify(mintTx))
+      : await this.signMessageHardWallet(JSON.stringify(mintTx));
     const mintPl: EventPayload = {
       event: "tx",
       data: mintTx,
     };
-    
+
     this.ws.send(JSON.stringify(mintPl));
     return this.waitForMessage(JSON.stringify(mintPl));
   }
@@ -349,4 +426,9 @@ export class FeelessClient {
 }
 
 export default FeelessClient;
-export type { SearchBlockResult, SearchTransactionResult, SearchResults, TransactionHistory };
+export type {
+  SearchBlockResult,
+  SearchTransactionResult,
+  SearchResults,
+  TransactionHistory,
+};
