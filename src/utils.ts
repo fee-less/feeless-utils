@@ -36,7 +36,7 @@ type MintedTokenEntry = { miningReward: number; airdrop: number };
 type MintedTokens = Map<string, MintedTokenEntry>;
 
 type EventPayload = {
-  event: "tx" | "block";
+  event: "tx" | "block" | "push";
   data: any;
 };
 
