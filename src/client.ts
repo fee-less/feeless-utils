@@ -89,7 +89,6 @@ export class FeelessClient {
       const { value, done } = await reader.read();
       line = value ?? "";
     } finally {
-      // ✅ cancel the reader properly
       await reader.cancel().catch(() => {});
       reader.releaseLock();
       await readableClosed.catch(() => {});
@@ -242,13 +241,25 @@ export class FeelessClient {
   async getTokenInfo(token: string): Promise<MintedTokenEntry> {
     return await fetch(`${this.http}/token-info/${token}`)
       .then((res) => res.json())
-      .then((token) => token);
+      .then((token) => {
+        if (!token.error) {
+          return token;
+        } else {
+          throw Error("Token does not exist!");
+        }
+      });
   }
 
   async getTokenInfoByI(i: number): Promise<MintedTokenEntry> {
     return await fetch(`${this.http}/token/${i}`)
       .then((res) => res.json())
-      .then((token) => token);
+      .then((token) => {
+        if (!token.error) {
+          return token;
+        } else {
+          throw Error("Token does not exist!");
+        }
+      });
   }
 
   async getTokenCount(): Promise<MintedTokenEntry> {
