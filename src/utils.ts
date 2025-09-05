@@ -23,7 +23,7 @@ type Transaction = {
 
 type Block = {
   timestamp: number;
-  transactions: Transaction[];
+  transactions: Transaction[] | string;
   prev_hash: string;
   nonce: number;
   signature: string;
